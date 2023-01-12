@@ -1,0 +1,78 @@
+#! /usr/bin/python3
+
+from pathlib import Path
+from subprocess import run
+from subprocess import Popen
+from subprocess import DEVNULL
+from datetime import datetime
+from natsort import os_sorted 
+import sys
+import shlex
+
+EXIFTOOL_DIR = f'{Path.home()}/.local/bin/Image-ExifTool-12.51/exiftool'
+SUPPORTED_FILETYPES = ['.jpg', '.jpeg', '.webp']
+
+def modify(file, date):
+    run(shlex.split(
+        f'{EXIFTOOL_DIR} ' 
+        f'-ModifyDate={date.isoformat()} -CreateDate={date.isoformat()} -DateTimeOriginal={date.isoformat()} '
+        '-overwrite_original '
+        f'"{file}"'
+    ))
+    run(shlex.split(f'touch -d {date.isoformat()} "{file}"'))
+
+def is_supported_fileformat(file):
+    return file.suffix.lower() in SUPPORTED_FILETYPES
+    
+def is_new(file):
+    res = run(shlex.split(f'{EXIFTOOL_DIR} -exif -if \'$exif\' "{file}"'), stdout=DEVNULL)
+    return res.returncode != 0:
+
+def convert_to_full_date(datestring):
+    res = datetime.fromisoformat(datestring)
+    if len(datestring) > 10:
+        return res
+    res.replace(hour=0,minute=0,second=0)
+    return res
+    
+def loop(files_list, new_files=False):
+    for item in files_list:
+        print(item.name, end=': ')
+        date_is_valid = False
+        date = ''
+        while not date_is_valid:
+            inputdate = input()
+            if len(inputdate.strip()) == 0:
+                date = ''
+                break
+            try:
+                date = convert_to_full_date(inputdate)
+                break
+            except ValueError:
+                continue
+        if date != '':
+            modify(item, date)
+
+def main(*args):
+    currPath = Path.cwd()
+    if not Path(EXIFTOOL_DIR).exists():
+        print("ExifTool not found. Please install ExifTool 12.51 and change the EXIFTOOL_DIR variable to the installation directory.")
+        exit(-1)
+
+    files_list = list(os_sorted(filter(is_supported_fileformat, currPath.iterdir())))
+    if (len(args) > 0):
+        if (args[0] == '--new'):
+            files_list = filter(is_new, files_list)
+        elif (args[0] == '--files'):
+            loop(list(filter(is_supported_fileformat, [Path(x) for x in args[1:]]), False)
+        else:
+            print(
+                f"Arguments: --new (modify only files without EXIF data)\n"
+                "--files [files] (modify specific files)"
+            )
+    else:
+        loop(files_list, False)
+
+
+if __name__ == '__main__':
+    main(*sys.argv[1:])

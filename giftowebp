@@ -1,0 +1,10 @@
+#! /usr/bin/bash
+shopt -s nocaseglob
+
+for image in *.gif;
+do
+ffmpeg -f gif -i "$image" -c libwebp -loop 0 "${image%.*}.webp" 
+touch -r "$image" "${image%.*}.webp"
+rm "$image"
+done
+
