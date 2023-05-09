@@ -1,0 +1,53 @@
+#! /usr/bin/python3
+
+from sys import argv
+from pathlib import Path
+from subprocess import run
+import shutil
+# mkdir -p frames && cd frames && anim_dump ../$target_file && cd ..
+# ffmpeg -framerate 25 -i frames/dump_%04d.png example.webm
+# ffmpeg -i "$target_file" -vcodec libwebp -filter:v fps=fps=20 -lossless 1 -loop 0 -preset default -an "${target_file%.*}.webp"
+
+def get_framerate(anim_info):
+    sum = 0
+    cnt = 0
+    for line in anim_info.split('\n'):
+        line = line.strip()
+        if len(line) == 0:
+            continue
+        if line[0] in '0123456789':
+            sum += int(line.split()[6])
+            cnt += 1
+    average = sum / cnt
+    return 1000 / average
+
+
+def main(filename, *args):
+    FRAMES_DIR = Path('/tmp/frames')
+    target = Path(filename)
+    if not target.exists():
+        print("The specified file does not exist.")
+        return
+    # Extract the frames
+    FRAMES_DIR.mkdir(exist_ok=True)
+    run(['anim_dump', f'{target.resolve()}'], cwd=FRAMES_DIR)
+
+    # Get the framerate
+    anim_info = run(['webpmux', '-info', filename], capture_output=True).stdout
+    anim_info = str(anim_info, 'UTF-8')
+    framerate = get_framerate(anim_info)
+    
+    # Convert to webm and then back to webp
+    tmp_video = Path('/tmp') / target.with_suffix('.webm')
+    run(['ffmpeg', '-framerate', str(framerate), '-i', 
+         f'{FRAMES_DIR / "dump_%04d.png"}', str(tmp_video)])
+    run(['ffmpeg', '-i', str(tmp_video), '-vcodec', 'libwebp', '-filter:v',
+         f'fps=fps={min(framerate, 30)}', '-loop', '0', '-preset', 'default', '-an',
+         f'{target.stem}_reduced.webp'])
+
+    ## Remove temporary files
+    shutil.rmtree(FRAMES_DIR)
+    tmp_video.unlink()
+
+if __name__ == '__main__':
+    main(*argv[1:])

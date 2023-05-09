@@ -4,7 +4,7 @@ delete_file=0
 
 while getopts ":d" option; do
    case $option in
-      d) # display Help
+      d)
         delete_file=1
         ;;
    esac
@@ -12,7 +12,7 @@ done
 
 for video in *.mp4;
 do
-    ffmpeg -i "$video" -vcodec libwebp -filter:v fps=fps=20 -lossless 1 -loop 0 -preset default -an -vsync 0 "${video%.*}.webp"
+    ffmpeg -i "$video" -vcodec libwebp -filter:v fps=fps=20 -lossless 1 -loop 0 -preset default -an "${video%.*}.webp"
     touch -r "$video" "${video%.*}.webp"
     if [ $delete_file -eq  1 ] 
     then

@@ -9,13 +9,12 @@ import sys
 import os
 import shlex
 
-EXIFTOOL_DIR = f'{Path.home()}/.local/bin/Image-ExifTool-12.55/exiftool'
-SUPPORTED_FILETYPES = ['.jpg', '.jpeg', '.webp']
+SUPPORTED_FILETYPES = ['.jpg', '.jpeg', '.webp', '.avif']
 
 def modify(file, date):
     run(shlex.split(
-        f'{EXIFTOOL_DIR} ' 
-        f'-ModifyDate={date.isoformat()} -CreateDate={date.isoformat()} -DateTimeOriginal={date.isoformat()} '
+        f'exiftool -ModifyDate={date.isoformat()} '
+        f'-CreateDate={date.isoformat()} -DateTimeOriginal={date.isoformat()} '
         '-overwrite_original '
         f'"{file}"'
     ))
@@ -25,12 +24,14 @@ def is_supported_fileformat(file):
     return file.suffix.lower() in SUPPORTED_FILETYPES
     
 def is_new(file):
-    res = run(shlex.split(f'{EXIFTOOL_DIR} -exif -if \'$exif\' "{file}"'), stdout=DEVNULL)
+    res = run(shlex.split(f'exiftool -exif -if \'$exif\' "{file}"'), stdout=DEVNULL)
     return res.returncode != 0
 
 def convert_to_full_date(datestring):
+    if len(datestring) == 6:
+        datestring = f'20{datestring}'
     res = datetime.fromisoformat(datestring)
-    if len(datestring) > 10:
+    if len(datestring) > 10: # implies that the datestring is valid
         return res
     res.replace(hour=0,minute=0,second=0)
     return res
@@ -57,12 +58,9 @@ def loop(files_list):
 
 def main(*args):
     currPath = Path.cwd()
-    if not Path(EXIFTOOL_DIR).exists():
-        print("ExifTool not found. Please install ExifTool 12.51 and change the EXIFTOOL_DIR variable to the installation directory.")
-        exit(-1)
 
     files_list = list((filter(is_supported_fileformat, currPath.iterdir())))
-    files_list.sort(key=lambda x : os.path.getmtime(x))
+    files_list.sort(key=lambda x : x.stat().st_mtime)
 
     if (len(args) > 0):
         if (args[0] == '--new'):

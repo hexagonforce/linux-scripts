@@ -1,10 +1,22 @@
 #! /usr/bin/bash
 shopt -s nocaseglob
+delete_file=0
+
+while getopts ":d" option; do
+   case $option in
+      d) # display Help
+        delete_file=1
+        ;;
+   esac
+done
 
 for image in *.gif;
 do
-ffmpeg -f gif -i "$image" -c libwebp -loop 0 "${image%.*}.webp" 
+ffmpeg -f gif -i "$image" -c libwebp -loop 0 "${image%.*}.webp"
 touch -r "$image" "${image%.*}.webp"
-rm "$image"
+if [[ $delete_file -eq 1 ]]
+then
+    rm "$image"
+fi
 done
 
