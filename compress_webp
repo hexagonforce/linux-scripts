@@ -41,13 +41,21 @@ def main(filename, *args):
     tmp_video = Path('/tmp') / target.with_suffix('.webm')
     run(['ffmpeg', '-framerate', str(framerate), '-i', 
          f'{FRAMES_DIR / "dump_%04d.png"}', str(tmp_video)])
-    run(['ffmpeg', '-i', str(tmp_video), '-vcodec', 'libwebp', '-filter:v',
-         f'fps=fps={min(framerate, 30)}', '-loop', '0', '-preset', 'default', '-an',
+    run(
+        ['ffmpeg', '-i', str(tmp_video), '-vcodec', 'libwebp', '-filter:v',
+         f'fps=fps={min(framerate, 24)}', '-loop', '0', '-preset', 'default', '-an',
+         f'{target.stem}_reduced.webp']
+    )
+
+    # Copy the exif metadata
+    run(['exiftool', '-tagsfromfile', str(target), '-exif', '-overwrite_original',
          f'{target.stem}_reduced.webp'])
 
     ## Remove temporary files
     shutil.rmtree(FRAMES_DIR)
     tmp_video.unlink()
+    if '-d' in args:
+        target.unlink()
 
 if __name__ == '__main__':
     main(*argv[1:])

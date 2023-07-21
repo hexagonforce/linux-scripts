@@ -1,0 +1,160 @@
+#! /usr/bin/python3
+
+from pathlib import Path
+from subprocess import run
+from subprocess import DEVNULL
+from datetime import datetime, timezone, timedelta
+from natsort import os_sorted
+import tkinter as tk
+from PIL import ImageTk, Image
+
+import sys
+import os
+import shlex
+import exifread
+import boto3
+import urllib
+import shutil
+
+SUPPORTED_FILETYPES = ['.jpg', '.jpeg', '.webp', '.avif']
+S3_BUCKET_NAME = 'exifdates'
+TMP_DIRECTORY = Path('/tmp/exifdates')
+NULL_DATE = datetime(year=1970, month=1, day=1)
+
+def modify_date(file, date):
+    run(shlex.split(
+        f'exiftool -ModifyDate={date.isoformat()} '
+        f'-CreateDate={date.isoformat()} -DateTimeOriginal={date.isoformat()} '
+        '-overwrite_original '
+        f'"{file}"'
+    ))
+    os.utime(file, (date.timestamp(), date.timestamp()))
+
+def is_supported_fileformat(file):
+    return file.suffix.lower() in SUPPORTED_FILETYPES
+    
+def exifdate_of_image(file):
+    exifdata = run(['exiftool', file], capture_output=True).stdout.decode('utf-8')
+    for line in exifdata.split('\n'):
+        if line.startswith('Date/Time Original'):
+            datestring = ' '.join(line.split()[-2:])
+            dateval = datetime.strptime(datestring, "%Y:%m:%d %H:%M:%S")
+            if dateval == NULL_DATE:
+                return None
+            return dateval
+    return None
+
+def convert_to_full_date(datestring):
+    if len(datestring) <= 6:
+        datestring = f'20{datestring}'
+    res = datetime.fromisoformat(datestring)
+    if len(datestring) > 10: # implies that the datestring is valid
+        return res
+    res.replace(hour=0,minute=0,second=0)
+    return res
+
+def embed_string_in_url(url, string):
+    return url.format(urllib.parse.quote(string, safe="~()*!.'"))
+
+def is_animated_webp(file):
+    webp_info = run(['webpmux', '-info', file], capture_output=True).stdout.decode('utf-8') 
+    return 'animation' in webp_info
+    
+def upload_picture(s3_resource, folder_name, file):
+    if file.suffix == '.webp' and is_animated_webp(file):
+        TMP_DIRECTORY.mkdir(exist_ok=True)
+        run(['webpmux', '-get', 'frame', '1', file, '-o', TMP_DIRECTORY / file.name])
+        file = TMP_DIRECTORY / file.name
+    s3_resource.Object(S3_BUCKET_NAME, f'{folder_name}/{file.name}').\
+            upload_file(Filename=file)
+
+def loop(files_list):
+    # Window display
+    window = tk.Tk()
+    window.title("EXIFdates")
+
+    for item in files_list:
+        # Prompt
+        prevdate = exifdate_of_image(item)
+        prompt = f'{item.name}({prevdate}): '
+
+        # Semi-automated google image search
+        bucket_url = embed_string_in_url(f'https://{S3_BUCKET_NAME}.s3.amazonaws.com/{{}}', str(Path(*item.parts[-2:])))
+        search_url = embed_string_in_url('https://lens.google.com/uploadbyurl?url={}', bucket_url)
+        
+        # Current image display
+        img = Image.open(item)
+        img.thumbnail((500,500))
+        img = ImageTk.PhotoImage(img)
+        panel = tk.Label(window, image=img)
+        panel.pack(side='bottom', fill='both')
+        window.update_idletasks()
+        window.update()
+        
+        # Loop until we get a valid input
+        date = None
+        while True:
+            print(prompt, end='')
+            inputdate = input().strip()
+            if len(inputdate) == 0:
+                print('Skipped')
+                break
+            if inputdate == '?':
+                date = NULL_DATE
+                break
+            if inputdate.startswith('s'):
+                run(['org.mozilla.firefox', '--private-window', search_url])
+                continue
+            try:
+                date = convert_to_full_date(inputdate)
+                break
+            except ValueError:
+                print("Invalid date format. Please input a date according to the ISO8601 standard.")
+        if date != None:
+            modify_date(item, date)
+        panel.destroy()
+    window.destroy()
+
+def sync(files_list):
+    for item in files_list:
+        exif_date = exifdate_of_image(item)
+        if exif_date:
+            os.utime(item, (exif_date.timestamp(), exif_date.timestamp()))
+
+def main(*args):
+    curr_path = Path.cwd()
+    folder_name = curr_path.name
+    files_list = [x for x in curr_path.iterdir() if is_supported_fileformat(x)]
+    files_list = os_sorted(files_list)
+    files_list.sort(key=lambda x : x.stat().st_mtime)
+
+    if 'sync' in args:
+        sync(files_list)
+        return
+    if '--new' in args:
+        files_list = [x for x in files_list if exifdate_of_image(x) is None]
+    if '--files' in args:
+        files_list = list(filter(is_supported_fileformat, [Path(x) for x in args[args.index('--files') + 1:]]))
+    if '--upload' in args:
+        s3_resource = boto3.resource('s3')
+        for file in files_list:
+            print(f'Uploading {file.name}')
+            upload_picture(s3_resource, folder_name, file)
+
+    loop(files_list)
+
+    if '--upload' in args:
+        s3_resource = boto3.resource('s3')
+        pictures_bucket = s3_resource.Bucket(name='exifdates')
+        delete_list = [{'Key': obj.key} for obj in pictures_bucket.objects.filter(Prefix=f'{folder_name}/')]
+        pictures_bucket.delete_objects(
+            Delete={
+                'Objects': delete_list
+            }
+        )
+        if TMP_DIRECTORY.is_dir():
+            shutil.rmtree(TMP_DIRECTORY)
+
+
+if __name__ == '__main__':
+    main(*sys.argv[1:])
