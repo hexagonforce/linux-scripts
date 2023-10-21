@@ -1,0 +1,31 @@
+#! /usr/bin/env bash
+# Used for lf preview of animated webp files with kitty.
+# Requirements: xxhash, libwebp installed from Google's repository.
+
+file=$1
+
+webpinfo $file | grep ANIM > /dev/null 2> /dev/null
+if [[ $? -ne 0 ]];
+then
+    echo "$file"
+    exit 0
+fi
+
+fname=($(xxhsum "$file"))
+full_fname="$HOME/.cache/animated_webp_preview/$fname"
+
+if [[ -f full_fname ]];
+then
+    echo "$full_fname"
+    exit 0
+fi
+
+mkdir -p ~/.cache/animated_webp_preview
+webpmux -get frame 2 "$file" -o "$full_fname" 
+
+if [[ $? -eq 0 ]];
+then
+    echo "$full_fname"
+else
+    echo "$file"
+fi
