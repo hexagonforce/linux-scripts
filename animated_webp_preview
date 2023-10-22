@@ -2,6 +2,8 @@
 # Used for lf preview of animated webp files with kitty.
 # Requirements: xxhash, libwebp installed from Google's repository.
 
+CACHE_LIMIT=51200
+
 file=$1
 
 webpinfo $file | grep ANIM > /dev/null 2> /dev/null
@@ -9,6 +11,12 @@ if [[ $? -ne 0 ]];
 then
     echo "$file"
     exit 0
+fi
+
+cachesize=$(du -s "$HOME/.cache/animated_webp_preview" | cut -f1)
+if [[ $cachesize -gt CACHE_LIMIT ]];
+then
+    rm "$HOME/.cache/animated_webp_preview/*"
 fi
 
 fname=($(xxhsum "$file"))
