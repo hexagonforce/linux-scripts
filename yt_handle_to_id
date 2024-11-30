@@ -1,0 +1,42 @@
+#! /usr/bin/env python3
+
+import urllib.request
+import json
+from pathlib import Path
+
+CHANNELS_LIST = Path('/home/syoo/Documents/VimWiki/YouTube Channels.md')
+
+def get_id_from_youtube_handle(handle):
+    assert(handle.startswith('@'))
+    URL = f"https://yt.lemnoslife.com/channels?handle={handle}"
+    with urllib.request.urlopen(URL) as response:
+        json_response = json.loads(response.read().decode(response.headers.get_content_charset()))
+        if not json_response.get('items'):
+            return None
+        return json_response.get('items')[0].get('id')
+
+def read_file(file):
+    with open(file) as f:
+        lines = f.readlines()
+    return lines
+
+def get_list_of_channel_handles(file_lines):
+    res = []
+    for line in file_lines:
+        line = line.strip()
+        if not line.startswith('-'):
+            continue
+        res.append(line.split()[1])
+    return res
+
+def create_youtube_subscription_url(channel_id):
+    return f'https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}'
+        
+def main():
+    channel_handles = get_list_of_channel_handles(read_file(CHANNELS_LIST))
+    for channel_id in (get_id_from_youtube_handle(channel_handle) for channel_handle in channel_handles):
+        print(create_youtube_subscription_url(channel_id))
+
+if __name__ == '__main__':
+    main()
+

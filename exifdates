@@ -1,3 +1,3 @@
 #! /bin/bash
 
-python3 /home/syoo/projects/exifdates/exifdates.py "$@"
+python3 $HOME/projects/exifdates/exifdates.py "$@"

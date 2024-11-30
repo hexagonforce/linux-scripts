@@ -1,0 +1,21 @@
+#! /usr/bin/zsh
+
+delete_file=0
+
+while getopts ":d" option; do
+   case $option in
+      d)
+        delete_file=1
+        ;;
+   esac
+done
+
+for gif in *.gif;
+do
+    ffmpeg -i "$gif" -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "${gif%.*}.mp4"
+    touch -r "$gif" "${gif%.*}.mp4"
+    if [ $delete_file -eq  1 ] 
+    then
+        rm "$gif"
+    fi
+done
