@@ -1,0 +1,117 @@
+#! env /usr/bin/python3
+from pathlib import Path
+from subprocess import run
+from datetime import datetime
+import json
+import requests
+import os
+
+API_KEY = os.environ['IMMICH_API_KEY'] # replace with a valid api key
+BASE_URL = 'http://127.0.0.1:2283/api'  # replace as needed
+
+def upload(file):
+    stats = os.stat(file)
+
+    headers = {
+        'Accept': 'application/json',
+        'x-api-key': API_KEY
+    }
+
+    data = {
+        'deviceAssetId': f'{file}-{stats.st_mtime}',
+        'deviceId': 'python',
+        'fileCreatedAt': datetime.fromtimestamp(stats.st_mtime),
+        'fileModifiedAt': datetime.fromtimestamp(stats.st_mtime),
+        'isFavorite': 'false',
+    }
+
+    files = {
+        'assetData': open(file, 'rb')
+    }
+
+    response = requests.post(
+        f'{BASE_URL}/assets', headers=headers, data=data, files=files)
+
+    yeet = response.json()
+    return yeet['id']
+
+def put_into_album(album, id_list):
+    url = f'{BASE_URL}/albums/{album}/assets'
+    payload = json.dumps({
+        'ids': id_list
+    })
+            
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-api-key': API_KEY
+    }
+
+    response = requests.request("PUT", url, headers=headers, data=payload)
+
+    print(response.text)
+
+def get_all_albums():
+    url = f"{BASE_URL}/albums"
+
+    payload = {}
+    headers = {
+        'Accept': 'application/json',
+        'x-api-key': API_KEY
+    }
+
+    response = requests.request("GET", url, headers=headers, data=payload)
+    name_to_id = {item['albumName']: item['id'] for item in response.json()}
+    return name_to_id
+
+def create_album(album_name):
+    url = f'{BASE_URL}/albums'
+    payload = json.dumps({
+        "albumName": album_name,
+    })
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-api-key': API_KEY
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    yeet = response.json()
+    return yeet['id']
+
+def main():
+    album_name_to_id = get_all_albums()
+    for node in Path.cwd().iterdir():
+        if not node.is_dir():
+            continue
+
+        name = node.stem
+        if name.find('-') == -1:
+            continue
+
+        folder_album_name = name.split('-')[0]
+
+        try:
+            date = datetime.fromisoformat('20' + name.split('-')[1] + 'T090000')
+        except:
+            print(f"error in parsing date from folder name: {node.stem}")
+            continue
+
+        asset_ids = []
+        for file in node.iterdir():
+            run(['touch', file, '-d', date.isoformat()])
+            asset_id = upload(file)
+            asset_ids.append(asset_id)
+
+        if folder_album_name not in album_name_to_id:
+            new_album_id = create_album(folder_album_name)
+            album_name_to_id[folder_album_name] = new_album_id
+
+        album_id = album_name_to_id[folder_album_name]
+
+        put_into_album(album_id, asset_ids)
+
+if __name__ == '__main__':
+    main()

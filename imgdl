@@ -1,0 +1,47 @@
+#!/bin/sh
+
+# Check if an argument is given
+if [ -n "$1" ]; then
+    input_source="$1"
+    exec < "$input_source"  # Redirect input from the file
+else
+    echo "Reading from standard input. Press Ctrl+D to finish."
+fi
+
+# Function to find a unique filename
+get_unique_filename() {
+    base_name="$1"
+    ext="$2"
+    counter=1
+    new_name="${base_name}.${ext}"
+
+    while [ -e "$new_name" ]; do
+        new_name="${base_name} (${counter}).${ext}"
+        counter=$((counter + 1))
+    done
+
+    echo "$new_name"
+}
+
+# Read URLs line by line
+while IFS= read -r url; do
+    # Skip empty lines
+    [ -z "$url" ] && continue
+
+    # Extract filename and extension from the URL
+    filename=$(basename "$url")
+    base_name="${filename%.*}"
+    extension="${filename##*.}"
+
+    # Ensure the extracted extension is valid
+    [ "$base_name" = "$filename" ] && extension=""  # No extension case
+
+    # Get a unique filename
+    output_file=$(get_unique_filename "$base_name" "$extension")
+
+    # Download the image
+    curl -s -o "$output_file" "$url"
+
+    echo "Downloaded: $output_file"
+done
+
